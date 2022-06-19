@@ -1,110 +1,55 @@
-# app.py
-
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from flask_restx import Api, Resource
-from flask_sqlalchemy import SQLAlchemy
-from marshmallow import Schema, fields
-from logger import new_logger
+
+from models import Movie
+from schemas import movie_schema, movies_schema
+from setup_db import db
 
 app = Flask(__name__)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['JSON_AS_ASCII'] = False
+app.config['RESTX_JSON'] = {'ensure_ascii': False, 'indent': 3}
+
+app.app_context().push()
+
+db.init_app(app)
 
 api = Api(app)
 movies_ns = api.namespace('movies')
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
-
-
-class Movie(db.Model):
-    __tablename__ = 'movie'
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(255))
-    description = db.Column(db.String(255))
-    trailer = db.Column(db.String(255))
-    year = db.Column(db.Integer)
-    rating = db.Column(db.Float)
-    genre_id = db.Column(db.Integer, db.ForeignKey("genre.id"))
-    genre = db.relationship("Genre")
-    director_id = db.Column(db.Integer, db.ForeignKey("director.id"))
-    director = db.relationship("Director")
-
-
-class Director(db.Model):
-    __tablename__ = 'director'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255))
-
-
-class Genre(db.Model):
-    __tablename__ = 'genre'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255))
-
-
-class MovieSchema(Schema):
-    id = fields.Integer(dump_only=True)
-    title = fields.String()
-    description = fields.String()
-    trailer = fields.String()
-    year = fields.Integer()
-    rating = fields.Float()
-    genre_id = fields.Integer()
-    director_id = fields.Integer()
-
-
-class DirectorSchema(Schema):
-    __tablename__ = 'director'
-    id = fields.Integer()
-    name = fields.String()
-
-
-class GenreSchema(Schema):
-    __tablename__ = 'genre'
-    id = fields.Integer()
-    name = fields.String()
-
-
-movie_schema = MovieSchema()
-movies_schema = MovieSchema(many=True)
-
-director_schema = DirectorSchema()
-directors_schema = DirectorSchema(many=True)
-
-genre_schema = GenreSchema()
-genres_schema = GenreSchema(many=True)
-
 
 @movies_ns.route('/')
 class MoviesView(Resource):
-    @property
     def get(self):
+        movies = Movie.query.limit(10).offset(0).all()
         director_id = request.args.get('director_id')
         genre_id = request.args.get('genre_id')
-        if director_id is not None or genre_id is not None:
-            if director_id is not None and genre_id is not None:
-                try:
-                    movies = Movie.query.filter(Movie.director_id == director_id, Movie.genre_id == genre_id)
-                    return movies_schema.dump(movies), 200
-                except Exception as e:
-                    return '', 404
-            elif director_id is not None:
-                try:
-                    movies = Movie.query.filter(Movie.director_id == director_id)
-                    return movies_schema.dump(movies), 200
-                except Exception as e:
-                    return '', 404
-            elif genre_id is not None:
-                try:
-                    movies = Movie.query.filter(Movie.genre_id == genre_id)
-                    return movies_schema.dump(movies), 200
-                except Exception as e:
-                    return '', 404
-        movies = Movie.query.limit(10).offset(0).all()
-        return movies_schema.dump(movies), 200
+        if director_id and genre_id:
+            try:
+                movies = Movie.query.filter(Movie.director_id == director_id, Movie.genre_id == genre_id)
+            except Exception as e:
+                return '', 404
+        elif director_id:
+            try:
+                movies = Movie.query.filter(Movie.director_id == director_id)
+            except Exception as e:
+                return '', 404
+        elif genre_id:
+            try:
+                movies = Movie.query.filter(Movie.genre_id == genre_id)
+            except Exception as e:
+                return '', 404
+        all_movies = movies
+        return movies_schema.dump(all_movies), 200
 
     def post(self):
-        pass
+        data = request.json
+        new_movie = Movie(**data)
+        with db.session.begin():
+            db.session.add(new_movie)
+        return '', 201
 
     def delete(self):
         pass
@@ -113,19 +58,57 @@ class MoviesView(Resource):
 @movies_ns.route('/<int:mid>/')
 class MovieView(Resource):
     def get(self, mid: int):
-        try:
-            movie = Movie.query.filter(Movie.id == mid).first()
-        except Exception as e:
-            new_logger.warning(message=e.args)
-            return '', 404
-        else:
+        movie = Movie.query.filter(Movie.id == mid).first()
+        if movie:
             return movie_schema.dump(movie), 200
+        return '', 404
 
-    def post(self):
-        pass
+    def path(self, mid: int):
+        movie = Movie.query.filter(Movie.id == mid).first()
+        data = request.json
+        if movie:
+            if 'title' in data:
+                movie.title = data['title']
+            if 'description' in data:
+                movie.description = data['description']
+            if 'trailer' in data:
+                movie.trailer = data['trailer']
+            if 'year' in data:
+                movie.year = data['year']
+            if 'rating' in data:
+                movie.rating = data['rating']
+            if 'genre_id' in data:
+                movie.genre_id = data['genre_id']
+            if 'director_id' in data:
+                movie.director_id = data['director_id']
+            db.session.add(movie)
+            db.session.commit()
+            return '', 204
+        return '', 404
 
-    def delete(self):
-        pass
+    def put(self, mid: int):
+        movie = Movie.query.filter(Movie.id == mid).first()
+        data = request.json
+        if movie:
+            movie.title = data['title']
+            movie.description = data['description']
+            movie.trailer = data['trailer']
+            movie.year = data['year']
+            movie.rating = data['rating']
+            movie.genre_id = data['genre_id']
+            movie.director_id = data['director_id']
+            db.session.add(movie)
+            db.session.commit()
+            return '', 204
+        return '', 404
+
+    def delete(self, mid: int):
+        movie = Movie.query.filter(Movie.id == mid).first()
+        if movie:
+            return jsonify({'details': 'no such content'}), 404
+        db.session.delete(movie)
+        db.session.commit()
+        return 'Object deleted', 204
 
 
 if __name__ == '__main__':
