@@ -1,7 +1,7 @@
 from flask import Blueprint
 from flask_restx import Api
 
-from apis.movie_ns import api as movies_ns
+from apis.movie_ns import movies_ns
 from apis.director_ns import directors_ns
 from apis.genre_ns import genres_ns
 

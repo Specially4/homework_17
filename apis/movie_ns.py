@@ -5,10 +5,10 @@ from setup_db import db
 from models import Movie
 from schemas import movie_schema, movies_schema
 
-api = Namespace('movies')
+movies_ns = Namespace('movies')
 
 
-@api.route('/')
+@movies_ns.route('/')
 class MoviesView(Resource):
     def get(self):
         movies = Movie.query.limit(10).offset(0).all()
@@ -34,7 +34,7 @@ class MoviesView(Resource):
         pass
 
 
-@api.route('/<int:mid>')
+@movies_ns.route('/<int:mid>')
 class MovieView(Resource):
     def get(self, mid: int):
         movie = Movie.query.filter(Movie.id == mid).first()
