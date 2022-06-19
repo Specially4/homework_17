@@ -1,7 +1,6 @@
 from flask import Flask
 
 from api1 import blueprint as api1
-
 from setup_db import db
 
 app = Flask(__name__)
